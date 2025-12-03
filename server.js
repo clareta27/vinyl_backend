@@ -1,7 +1,7 @@
 // ======================================================
-// THRIFT FASHION BACKEND v5 (FINAL)
+// VINYL BACKEND v1
 // Trending + Search + Lookup + Recommend + PriceHistory
-// + Smart ChartData Expansion (no null results)
+// + Smart ChartData Expansion
 // ======================================================
 
 import express from "express";
@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ======================================================
-// TOKEN MANAGEMENT (AUTO REFRESH)
+// TOKEN MANAGEMENT
 // ======================================================
 let accessToken = null;
 let accessTokenExpiresAt = 0;
@@ -49,11 +49,7 @@ async function getAccessToken() {
 
   if (!resp.ok || !data.access_token) {
     console.error("❌ Cannot refresh token:", data);
-    const msg =
-      data?.error_description ||
-      data?.errors?.[0]?.message ||
-      JSON.stringify(data);
-    throw new Error("Cannot refresh token: " + msg);
+    throw new Error("Cannot refresh token: " + JSON.stringify(data));
   }
 
   accessToken = data.access_token;
@@ -86,7 +82,6 @@ function resolveMarketplace(country = "US") {
 // CACHE MEMORY
 // ======================================================
 const cacheStore = new Map();
-
 function setCache(key, val, ttlMs) {
   cacheStore.set(key, { val, exp: Date.now() + ttlMs });
 }
@@ -101,63 +96,45 @@ function getCache(key) {
 }
 
 // ======================================================
-// FASHION FILTERING
+// VINYL FILTERING
 // ======================================================
 const BLOCK_WORDS = [
-  "lego","funko","toy","poster","print","painting","frame",
-  "manual","booklet","guide","pattern",
-  "keychain","key chain","pin","badge","patch","magnet","sticker",
-  "bundle","joblot","job lot","bulk","wholesale","lots",
-  "charger","case","cover","phone","iphone","ipad","airpods","camera",
-  "pokemon","yugioh","yu-gi-oh","mtg","trading card","tcg",
-  "mug","cup","glass","lamp","furniture","sofa","chair","table",
-  "canvas","digital download","template","pdf"
+  "poster","print","tshirt","shirt","hoodie","jacket","sticker",
+  "figure","funko","toy","magnet","patch","keychain",
+  "canvas","digital","template","pdf","ebook","bundle",
+  "frame","painting","lamp","furniture","case","phone","iphone",
 ];
 
-function isFashion(item) {
+// hanya album, vinyl, cassette, cd, lp
+function isVinyl(item) {
   if (!item?.title) return false;
   const t = item.title.toLowerCase();
 
   if (BLOCK_WORDS.some(w => t.includes(w))) return false;
 
   return (
-    t.includes("vintage") ||
-    t.includes("thrift") ||
-    t.includes("y2k") ||
-    t.includes("streetwear") ||
-    t.includes("jacket") ||
-    t.includes("coat") ||
-    t.includes("jeans") ||
-    t.includes("denim") ||
-    t.includes("shirt") ||
-    t.includes("t-shirt") ||
-    t.includes("tee") ||
-    t.includes("dress") ||
-    t.includes("skirt") ||
-    t.includes("hoodie") ||
-    t.includes("sweatshirt") ||
-    t.includes("pants") ||
-    t.includes("trousers") ||
-    t.includes("cargo") ||
-    t.includes("sweater") ||
-    t.includes("nike") ||
-    t.includes("adidas") ||
-    t.includes("jordan") ||
-    t.includes("new balance") ||
-    t.includes("sneaker") ||
-    t.includes("trainers") ||
-    t.includes("bag") ||
-    t.includes("tote")
+    t.includes("vinyl") ||
+    t.includes("lp") ||
+    t.includes("record") ||
+    t.includes("album") ||
+    t.includes("cassette") ||
+    t.includes("tape") ||
+    t.includes("cd") ||
+    t.includes("compact disc") ||
+    t.includes("limited edition") ||
+    t.includes("first press") ||
+    t.includes("remaster")
   );
 }
 
 // ======================================================
 // NORMALIZER
 // ======================================================
-function normalizeThriftItem(item) {
+function normalizeVinyl(item) {
   return {
     itemId: item.itemId,
     title: item.title,
+    artist: item.brand || item.title?.split("-")[0]?.trim() || null,
     price: item.price || null,
     image:
       item.thumbnailImages?.[0]?.imageUrl ||
@@ -165,17 +142,15 @@ function normalizeThriftItem(item) {
       null,
     url: item.itemWebUrl,
     condition: item.condition || null,
-    brand: item.brand || null,
   };
 }
 
 // ======================================================
-// EBAY SEARCH WRAPPER (BROWSE API)
+// EBAY SEARCH WRAPPER
 // ======================================================
 async function ebaySearch({ q, country = "US", extra = "" }) {
   const marketplace = resolveMarketplace(country);
-
-  const cacheKey = `S|${marketplace}|${q}|${extra}`;
+  const cacheKey = `V|${marketplace}|${q}|${extra}`;
   const cached = getCache(cacheKey);
   if (cached) return cached;
 
@@ -197,12 +172,8 @@ async function ebaySearch({ q, country = "US", extra = "" }) {
   const json = await resp.json();
 
   if (!resp.ok) {
-    console.error("❌ eBay error:", json);
-    const msg =
-      json?.errors?.[0]?.message ||
-      json?.error_description ||
-      JSON.stringify(json);
-    throw new Error("eBay search failed: " + msg);
+    console.error("❌ eBay Error:", json);
+    throw new Error(JSON.stringify(json));
   }
 
   setCache(cacheKey, json, 5 * 60 * 1000);
@@ -210,31 +181,31 @@ async function ebaySearch({ q, country = "US", extra = "" }) {
 }
 
 // ======================================================
-// 1) /thrift-trending
+// 1) /vinyl-trending
 // ======================================================
-app.get("/thrift-trending", async (req, res) => {
+app.get("/vinyl-trending", async (req, res) => {
   try {
     const { country = "US", limit = 40 } = req.query;
 
+    // Artist / genre populer vinyl
     const queries = [
-      "nike dunk",
-      "nike air force 1",
-      "adidas samba",
-      "new balance 550",
-      "jordan 1",
-      "vintage jacket",
-      "vintage jeans",
-      "vintage sweatshirt",
-      "90s jacket",
-      "y2k top",
-      "streetwear hoodie",
-      "supreme hoodie",
-      "carhartt jacket",
-      "stussy t shirt"
+      "pink floyd vinyl",
+      "queen vinyl",
+      "nirvana vinyl",
+      "metallica vinyl",
+      "the beatles vinyl",
+      "taylor swift vinyl",
+      "radiohead vinyl",
+      "fleetwood mac vinyl",
+      "daft punk vinyl",
+      "jazz vinyl",
+      "hip hop vinyl",
+      "rare cassette tape",
+      "vintage cassette",
+      "limited edition lp",
     ];
 
     let found = [];
-
     for (const q of queries) {
       try {
         const json = await ebaySearch({
@@ -242,19 +213,17 @@ app.get("/thrift-trending", async (req, res) => {
           country,
           extra: "&limit=50&sort=BEST_MATCH",
         });
-        found.push(...(json.itemSummaries || []).filter(isFashion));
+        found.push(...(json.itemSummaries || []).filter(isVinyl));
       } catch (err) {
-        console.warn("⚠️ Skip query:", q, "|", err.message);
+        console.warn("⚠ Skip query:", q, "|", err.message);
       }
     }
 
     const map = new Map();
-    for (const it of found) {
-      if (!map.has(it.title)) map.set(it.title, it);
-    }
+    for (const it of found) if (!map.has(it.title)) map.set(it.title, it);
 
     const enriched = [...map.values()].map(it => ({
-      ...normalizeThriftItem(it),
+      ...normalizeVinyl(it),
       score: Number(it.price?.value || 0) + Math.random() * 10,
     }));
 
@@ -271,17 +240,12 @@ app.get("/thrift-trending", async (req, res) => {
 });
 
 // ======================================================
-// 2) /thrift-search
+// 2) /vinyl-search
 // ======================================================
-app.get("/thrift-search", async (req, res) => {
+app.get("/vinyl-search", async (req, res) => {
   try {
-    const {
-      q = "",
-      country = "US",
-      page = 1,
-      limit = 20,
-      sort = "best",
-    } = req.query;
+    const { q = "", country = "US", page = 1, limit = 20, sort = "best" } =
+      req.query;
 
     const json = await ebaySearch({
       q,
@@ -289,18 +253,23 @@ app.get("/thrift-search", async (req, res) => {
       extra: "&limit=200",
     });
 
-    let items = (json.itemSummaries || []).filter(isFashion);
+    let items = (json.itemSummaries || []).filter(isVinyl);
 
     if (sort === "price_low")
-      items.sort((a, b) => Number(a.price?.value || 0) - Number(b.price?.value || 0));
+      items.sort((a, b) =>
+        Number(a.price?.value || 0) - Number(b.price?.value || 0)
+      );
 
     if (sort === "price_high")
-      items.sort((a, b) => Number(b.price?.value || 0) - Number(a.price?.value || 0));
+      items.sort((a, b) =>
+        Number(b.price?.value || 0) - Number(a.price?.value || 0)
+      );
 
     if (sort === "newest")
       items.sort(
         (a, b) =>
-          new Date(b.itemCreationDate || 0) - new Date(a.itemCreationDate || 0)
+          new Date(b.itemCreationDate || 0) -
+          new Date(a.itemCreationDate || 0)
       );
 
     const start = (Number(page) - 1) * Number(limit);
@@ -310,7 +279,7 @@ app.get("/thrift-search", async (req, res) => {
       country,
       query: q,
       total: items.length,
-      items: paged.map(normalizeThriftItem),
+      items: paged.map(normalizeVinyl),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -318,24 +287,24 @@ app.get("/thrift-search", async (req, res) => {
 });
 
 // ======================================================
-// 3) /lookup (BARCODE → GTIN)
+// 3) LOOKUP BARCODE → VINYL
 // ======================================================
 app.get("/lookup", async (req, res) => {
   try {
     const code = req.query.code;
     const country = req.query.country || "US";
 
-    if (!code) {
+    if (!code)
       return res.status(400).json({ error: "Parameter 'code' wajib diisi" });
-    }
-
-    const url =
-      `https://api.ebay.com/buy/browse/v1/item_summary/search` +
-      `?gtin=${encodeURIComponent(code)}` +
-      `&limit=20`;
 
     const token = await getAccessToken();
     const marketplace = resolveMarketplace(country);
+
+    // Search via GTIN first
+    const url =
+      `https://api.ebay.com/buy/browse/v1/item_summary/search` +
+      `?gtin=${encodeURIComponent(code)}` +
+      "&limit=20";
 
     const resp = await fetch(url, {
       headers: {
@@ -345,22 +314,20 @@ app.get("/lookup", async (req, res) => {
     });
 
     const json = await resp.json();
-    let items = (json.itemSummaries || []).filter(isFashion);
+    let items = (json.itemSummaries || []).filter(isVinyl);
 
-    // fallback search with q=
     if (items.length === 0) {
       const fallback = await ebaySearch({
         q: code,
         country,
         extra: "&limit=20",
       });
-      items = (fallback.itemSummaries || []).filter(isFashion);
-
+      items = (fallback.itemSummaries || []).filter(isVinyl);
       return res.json({
         code,
         fallback: true,
         total_items: items.length,
-        items: items.map(normalizeThriftItem),
+        items: items.map(normalizeVinyl),
       });
     }
 
@@ -368,7 +335,7 @@ app.get("/lookup", async (req, res) => {
       code,
       fallback: false,
       total_items: items.length,
-      items: items.map(normalizeThriftItem),
+      items: items.map(normalizeVinyl),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -376,7 +343,7 @@ app.get("/lookup", async (req, res) => {
 });
 
 // ======================================================
-// 4) /recommend
+// 4) /recommend (Artist/Album Based)
 // ======================================================
 app.get("/recommend", async (req, res) => {
   try {
@@ -384,7 +351,7 @@ app.get("/recommend", async (req, res) => {
     let q = req.query.q || "";
 
     let baseTitle = "";
-    let baseBrand = "";
+    let baseArtist = "";
     let basePrice = 0;
 
     if (id) {
@@ -405,15 +372,14 @@ app.get("/recommend", async (req, res) => {
 
       if (detailResp.ok) {
         baseTitle = detailJson.title || "";
-        baseBrand = detailJson.brand || "";
+        baseArtist = detailJson.brand || "";
         basePrice = Number(detailJson.price?.value || 0);
-        if (!q) {
-          q = `${baseBrand} ${baseTitle}`;
-        }
+
+        if (!q) q = `${baseArtist} ${baseTitle}`;
       }
     }
 
-    if (!q) q = "vintage jacket";
+    if (!q) q = "vinyl record";
 
     const raw = await ebaySearch({
       q,
@@ -421,7 +387,7 @@ app.get("/recommend", async (req, res) => {
       extra: "&limit=200",
     });
 
-    let items = (raw.itemSummaries || []).filter(isFashion);
+    let items = (raw.itemSummaries || []).filter(isVinyl);
     if (id) items = items.filter(i => i.itemId !== id);
 
     const baseWords = baseTitle
@@ -430,24 +396,21 @@ app.get("/recommend", async (req, res) => {
       .filter(w => w.length > 2);
 
     const recommended = items.map(it => {
-      const n = normalizeThriftItem(it);
+      const n = normalizeVinyl(it);
       const priceVal = Number(it.price?.value || 0);
 
       let score = 0;
 
       if (
-        baseBrand &&
-        n.brand &&
-        n.brand.toLowerCase() === baseBrand.toLowerCase()
+        baseArtist &&
+        n.artist &&
+        n.artist.toLowerCase() === baseArtist.toLowerCase()
       ) {
-        score += 25;
+        score += 20;
       }
 
-      if (basePrice > 0 && priceVal > 0) {
-        const diff = Math.abs(priceVal - basePrice);
-        const ratio = diff / basePrice;
-        score += Math.max(0, 15 - ratio * 20);
-      }
+      const diff = Math.abs(priceVal - basePrice);
+      score += Math.max(0, 15 - (diff / basePrice) * 20);
 
       const words = n.title.toLowerCase().split(/\s+/);
       let overlap = 0;
@@ -470,7 +433,7 @@ app.get("/recommend", async (req, res) => {
       base: {
         id: id || null,
         title: baseTitle,
-        brand: baseBrand,
+        artist: baseArtist,
         price: basePrice,
       },
       total_items: recommended.length,
@@ -482,7 +445,7 @@ app.get("/recommend", async (req, res) => {
 });
 
 // ======================================================
-// 5) /price-history (SOLD ITEMS)
+// 5) PRICE HISTORY
 // ======================================================
 app.get("/price-history", async (req, res) => {
   try {
@@ -557,7 +520,7 @@ app.get("/price-history", async (req, res) => {
 });
 
 // ======================================================
-// 6) /chart-data (SMART QUERY EXPANSION)
+// 6) SMART CHART DATA
 // ======================================================
 app.get("/chart-data", async (req, res) => {
   try {
@@ -565,25 +528,17 @@ app.get("/chart-data", async (req, res) => {
     if (!q)
       return res.status(400).json({ error: "Parameter 'q' wajib diisi" });
 
-    // SMART EXPANSIONS
     const expansions = [
       q,
-      q.replace(/\s+/g, ""), // adidas sl72
-      q.replace(" ", "-"), // adidas sl-72
-      q.replace("-", " "), // adidas sl 72
-      q.split(" ").reverse().join(" "), // sl 72 adidas
+      q.replace(/\s+/g, ""),
+      q.replace(" ", "-"),
+      q.replace("-", " "),
+      q.split(" ").reverse().join(" "),
+      q + " vinyl",
+      q + " lp",
+      q + " record",
+      q + " cassette",
     ];
-
-    // Add thrift expansions
-    const lower = q.toLowerCase();
-    if (lower.includes("adidas") || lower.includes("nike")) {
-      expansions.push(
-        q + " retro",
-        q + " vintage",
-        q + " og",
-        q + " classic",
-      );
-    }
 
     const uniq = [...new Set(expansions)];
 
@@ -618,14 +573,12 @@ app.get("/chart-data", async (req, res) => {
       return sold;
     }
 
-    // Combine all results
     let combined = [];
     for (const kw of uniq) {
       const sold = await fetchSold(kw);
       combined.push(...sold);
     }
 
-    // Deduplicate
     const map = new Map();
     combined.forEach(item => {
       const key = item.date.toISOString() + "-" + item.price;
@@ -682,14 +635,12 @@ app.get("/chart-data", async (req, res) => {
 // ROOT
 // ======================================================
 app.get("/", (req, res) => {
-  res.send(
-    "🔥 Vinyl Backend v5 (Trending + Search + Lookup + Recommend + PriceHistory + SmartChart) is running."
-  );
+  res.send("🎵 Vinyl Backend is running (Search + Trending + Lookup + Chart)");
 });
 
 // ======================================================
 // START SERVER
 // ======================================================
 app.listen(PORT, () => {
-  console.log(`🚀 Vinyl Fashion Backend v5 running on port ${PORT}`);
+  console.log(`🚀 Vinyl Backend v1 running on port ${PORT}`);
 });
